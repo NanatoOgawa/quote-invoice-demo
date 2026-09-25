@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>見積書・請求書ツール（1画面デモ）</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--ink:#1c2430;--mute:#5d6b7c;--line:#d9dee5;--acc:#1f3a5f;--ok:#0f7b4b;--warn:#a5540b}
+@media (prefers-color-scheme:dark){:root{--bg:#12161c;--card:#1b222b;--ink:#e8ecf1;--mute:#9aa7b6;--line:#2c3644;--acc:#7fb0ee;--ok:#5cd19a;--warn:#f0a35c}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.7 -apple-system,"Hiragino Sans","Noto Sans JP",sans-serif}
+main{max-width:760px;margin:0 auto;padding:20px 16px 56px}
+h1{font-size:1.25rem;margin:.2em 0 .1em}
+.sub{color:var(--mute);font-size:.9rem;margin:0 0 16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin:12px 0}
+label{display:block;font-weight:600;margin:10px 0 4px;font-size:.92rem}
+.hint{font-weight:400;color:var(--mute);font-size:.82rem}
+input,select{width:100%;padding:10px 12px;font-size:1rem;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink)}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.seg{display:flex;gap:8px;margin:4px 0 8px}
+.seg label{flex:1;margin:0;font-weight:600}
+.seg input{position:absolute;opacity:0}
+.seg span{display:block;text-align:center;padding:10px;border:1px solid var(--line);border-radius:8px;cursor:pointer}
+.seg input:checked+span{background:var(--acc);color:var(--card);border-color:var(--acc)}
+.item{display:grid;grid-template-columns:2.2fr .8fr .7fr 1.1fr .9fr 1.1fr auto;gap:6px;align-items:center;margin:6px 0}
+.item input,.item select{padding:8px;font-size:.95rem}
+.item .amt{text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
+.head{font-size:.75rem;color:var(--mute)}
+button{font:inherit;padding:9px 14px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--ink);cursor:pointer}
+button.pri{background:var(--acc);color:var(--card);border-color:var(--acc);font-weight:600}
+table{width:100%;border-collapse:collapse}
+td{padding:7px 0;border-bottom:1px solid var(--line)}
+td:last-child{text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
+tr.total td{font-size:1.15rem;border-bottom:0;color:var(--acc)}
+.note{color:var(--mute);font-size:.82rem}
+.err{color:var(--warn);font-size:.85rem;min-height:1.2em}
+.only-inv{display:none}
+body.inv .only-inv{display:block}
+body.inv .only-quo{display:none}
+@media (max-width:560px){.item{grid-template-columns:1fr 1fr 1fr;}.item .name{grid-column:1/-1}.head{display:none}}
+@media print{body{background:#fff;color:#000}.no-print,.seg,.item button,#add,.hint{display:none!important}main{padding:0}.card{border:0;padding:0}input,select{border:0;padding:0;appearance:none;background:none;color:#000}}
+</style>
+</head>
+<body>
+<main>
+<h1>見積書・請求書ツール</h1>
+<p class="sub no-print">品目・数量・単価を入れると、税率ごとの消費税と合計が出ます。見積書から請求書へ、ワンタップで切り替えできます。</p>
+
+<div class="card no-print">
+  <div class="seg" role="radiogroup" aria-label="書類の種類">
+    <label><input type="radio" name="kind" value="quo" checked><span>見積書</span></label>
+    <label><input type="radio" name="kind" value="inv"><span>請求書</span></label>
+  </div>
+  <div class="row">
+    <div><label>宛名（お客様）</label><input id="to" placeholder="例：〇〇工務店 御中"></div>
+    <div><label>発行者名（自社）</label><input id="from" placeholder="例：△△建設"></div>
+  </div>
+  <div class="row">
+    <div><label>発行日</label><input id="date" type="date"></div>
+    <div><label><span class="only-quo">有効期限</span><span class="only-inv">お支払期限</span></label><input id="due" type="date"></div>
+  </div>
+  <div class="only-inv">
+    <div class="row">
+      <div><label>登録番号 <span class="hint">（適格請求書発行事業者の場合。T＋13桁）</span></label><input id="regno" placeholder="T1234567890123" maxlength="14"></div>
+      <div><label>振込先</label><input id="bank" placeholder="〇〇銀行 △△支店 普通 1234567"></div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="item head"><span>品名</span><span>数量</span><span>単位</span><span>単価（税抜・円）</span><span>税率</span><span>金額</span><span></span></div>
+  <div id="items"></div>
+  <button id="add" class="no-print">＋ 品目を追加</button>
+  <div class="err" id="err"></div>
+</div>
+
+<div class="card no-print">
+  <div class="row">
+    <div><label>端数処理（消費税・明細金額）</label>
+      <select id="round"><option value="floor">切り捨て</option><option value="round">四捨五入</option><option value="ceil">切り上げ</option></select></div>
+    <div><label>値引き（税抜・円） <span class="hint">税率が混在する場合は、税率ごとに按分</span></label><input id="disc" type="text" value="0" inputmode="numeric"></div>
+  </div>
+</div>
+
+<div class="card">
+  <table id="sum"></table>
+</div>
+
+<div class="card no-print">
+  <button class="pri" id="print">印刷／PDFにする</button>
+  <p class="note">税率ごとの税抜合計に対して、消費税の端数処理を1回だけ行います（インボイス制度で認められている計算方法の一つです）。計算結果は目安です。最終の確認は、ご自身（または税理士）で行ってください。<br>入力した内容は、この端末の中だけで計算され、外部には送信されません（このページは外部と通信しません）。</p>
+</div>
+</main>
+
+<script>
+/* ---- CALC-START（検算スクリプトが、ここから CALC-END までを取り出して実行する） ---- */
+function applyRound(x, mode){
+  // x は分数を避けるため、[分子, 分母]（正の整数）で受ける
+  var n=x[0], d=x[1];
+  if(mode==='ceil') return Math.floor((n+d-1)/d);
+  if(mode==='round') return Math.floor((2*n+d)/(2*d));
+  return Math.floor(n/d);
+}
+// 数量は小数第2位まで、税率は 10 または 8（%）。金額はすべて整数（円）
+function calc(items, opts){
+  var mode=opts.round||'floor', disc=opts.disc||0;
+  var lines=[], byRate={}, gross=0, i;
+  for(i=0;i<items.length;i++){
+    var it=items[i];
+    var q=Math.round(it.qty*100);            // 数量×100
+    var amt=applyRound([q*it.price,100],mode); // 明細金額（税抜）
+    lines.push({name:it.name,qty:it.qty,unit:it.unit,price:it.price,rate:it.rate,amount:amt});
+    byRate[it.rate]=(byRate[it.rate]||0)+amt;
+    gross+=amt;
+  }
+  // 値引きは、税率ごとに、税抜小計の比率で按分（端数は、最後の税率に寄せる）
+  var rates=Object.keys(byRate).map(Number).sort(function(a,b){return b-a;});
+  var left=Math.min(disc,gross), out=[], subtotal=0, tax=0, r;
+  for(i=0;i<rates.length;i++){
+    r=rates[i];
+    var share=(i===rates.length-1)?left:Math.floor(Math.min(disc,gross)*byRate[r]/(gross||1));
+    if(i<rates.length-1) left-=share;
+    var net=byRate[r]-share;
+    var t=applyRound([net*r,100],mode);
+    out.push({rate:r,net:net,tax:t,total:net+t});
+    subtotal+=net; tax+=t;
+  }
+  return {lines:lines,groups:out,subtotal:subtotal,tax:tax,total:subtotal+tax,gross:gross,discount:Math.min(disc,gross)};
+}
+/* ---- CALC-END ---- */
+
+var itemsEl=document.getElementById('items');
+function yen(n){return n.toLocaleString('ja-JP')+'円';}
+function addItem(v){
+  v=v||{};
+  var d=document.createElement('div'); d.className='item';
+  d.innerHTML='<input class="name" placeholder="例：外壁補修工事" value="'+(v.name||'')+'">'+
+  '<input class="qty" type="text" value="'+(v.qty!=null?v.qty:1)+'" inputmode="decimal">'+
+  '<input class="unit" placeholder="式" value="'+(v.unit||'式')+'">'+
+  '<input class="price" type="text" value="'+(v.price!=null?v.price:0)+'" inputmode="numeric">'+
+  '<select class="rate"><option value="10">10%</option><option value="8">8%（軽減）</option></select>'+
+  '<button type="button" aria-label="この行を削除">×</button>';
+  d.querySelector('.rate').value=String(v.rate||10);
+  d.querySelector('button').onclick=function(){d.remove();render();};
+  d.addEventListener('input',render);
+  itemsEl.appendChild(d);
+}
+var MAX_QTY=100000, MAX_PRICE=10000000, MAX_DISC=1000000000;
+function read(){
+  // 不正な入力が1つでもあれば bad に理由を入れる（その間は合計を出さない）
+  var arr=[], bad='';
+  itemsEl.querySelectorAll('.item').forEach(function(d,i){
+    var qs=d.querySelector('.qty').value.trim(), ps=d.querySelector('.price').value.trim(), n=(i+1)+'行目';
+    if(!/^\d+(\.\d{1,2})?$/.test(qs)||parseFloat(qs)>MAX_QTY){ if(!bad) bad=n+'の数量は、0以上'+MAX_QTY.toLocaleString('ja-JP')+'以下の、小数第2位までの数で入れてください。'; return; }
+    if(!/^\d+$/.test(ps)||parseInt(ps,10)>MAX_PRICE){ if(!bad) bad=n+'の単価は、0以上'+MAX_PRICE.toLocaleString('ja-JP')+'以下の整数（円）で入れてください。'; return; }
+    arr.push({name:d.querySelector('.name').value,qty:parseFloat(qs),unit:d.querySelector('.unit').value,price:parseInt(ps,10),rate:parseInt(d.querySelector('.rate').value,10)});
+  });
+  var ds=document.getElementById('disc').value.trim();
+  var disc=0;
+  if(ds!==''){ if(!/^\d+$/.test(ds)||parseInt(ds,10)>MAX_DISC){ if(!bad) bad='値引きは、0以上の整数（円）で入れてください。'; } else disc=parseInt(ds,10); }
+  return {items:arr,bad:bad,disc:disc};
+}
+function render(){
+  var r=read(), errEl=document.getElementById('err'), sumEl=document.getElementById('sum');
+  errEl.textContent=r.bad;
+  var amts=itemsEl.querySelectorAll('.item');
+  if(r.bad){
+    // 誤った合計を出さない（印刷・PDFにも出さない）
+    amts.forEach(function(d){var a=d.querySelector('.amt'); if(!a){a=document.createElement('div');a.className='amt';d.insertBefore(a,d.querySelector('button'));} a.textContent='—';});
+    sumEl.innerHTML='<tr><td>入力に誤りがあるため、合計は表示しません</td><td>—</td></tr>';
+    return;
+  }
+  var c=calc(r.items,{round:document.getElementById('round').value,disc:r.disc});
+  amts.forEach(function(d,i){
+    var a=d.querySelector('.amt'); if(!a){a=document.createElement('div');a.className='amt';d.insertBefore(a,d.querySelector('button'));}
+    a.textContent=yen(c.lines[i].amount);
+  });
+  var isInv=document.body.classList.contains('inv');
+  var h='<tr><td>'+(isInv?'請求':'見積')+'金額（税抜）'+(c.discount?'（値引き後）':'')+'</td><td>'+yen(c.subtotal)+'</td></tr>';
+  if(c.discount) h+='<tr><td>値引き（税抜）</td><td>−'+yen(c.discount)+'</td></tr>';
+  c.groups.forEach(function(g){h+='<tr><td>'+g.rate+'%対象 '+yen(g.net)+' ／ 消費税</td><td>'+yen(g.tax)+'</td></tr>';});
+  h+='<tr class="total"><td>合計（税込）</td><td>'+yen(c.total)+'</td></tr>';
+  sumEl.innerHTML=h;
+}
+document.getElementById('add').onclick=function(){addItem();render();};
+['round','disc','date','due','to','from','regno','bank'].forEach(function(id){document.getElementById(id).addEventListener('input',render);});
+document.querySelectorAll('input[name=kind]').forEach(function(r){r.addEventListener('change',function(){document.body.classList.toggle('inv',r.value==='inv'&&r.checked);render();});});
+document.getElementById('print').onclick=function(){window.print();};
+document.getElementById('date').value=new Date().toISOString().slice(0,10);
+addItem({name:'外壁補修工事',qty:1,unit:'式',price:120000,rate:10});
+addItem({name:'材料費（塗料）',qty:3.5,unit:'缶',price:8800,rate:10});
+addItem({name:'飲料（現場差し入れ）',qty:12,unit:'本',price:98,rate:8});
+render();
+</script>
+</body>
+</html>
